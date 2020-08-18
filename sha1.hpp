@@ -9,11 +9,11 @@ namespace sha1
 
 enum : std::size_t
 {
-    block_size = 16,
-    total_blocks = 80,
-    output_bytes = 20,
+    block_size   = 16 ,
+    total_blocks = 80 ,
+    output_bytes = 20 ,
     
-    message_block = 64, // 64 bytes = 512 bits
+    message_block = 64 , // 64 bytes = 512 bits
 };
     
 struct values
@@ -31,7 +31,68 @@ constexpr values  key_values() noexcept
     return {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6, 0};
 }
 
-    
+template <std::size_t n>
+constexpr std::uint32_t rol(const std::uint32_t value)
+{
+    return (value << n) | (value >> (32 - n));
+}
+
+struct block_t
+{
+    std::uint32_t w[block_size];
+
+    template <std::size_t i>
+    constexpr std::uint32_t blk() const noexcept
+    {
+        return rol<1>(w[(i + 13) & 15] ^ w[(i + 8) & 15] ^ w[(i + 2) & 15] ^ w[i]);
+    }
+
+};
+
+/*
+ * (R0+R1), R2, R3, R4 are the different operations used in SHA1
+ */
+
+constexpr void F0(const std::uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
+{
+    z += ((w & (x ^ y)) ^ y) + block[i] + 0x5a827999 + rol(v, 5);
+    w = rol(w, 30);
+}
+
+
+inline static void R1(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
+{
+    block[i] = blk(block, i);
+    z += ((w & (x ^ y)) ^ y) + block[i] + 0x5a827999 + rol(v, 5);
+    w = rol(w, 30);
+}
+
+
+inline static void R2(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
+{
+    block[i] = blk(block, i);
+    z += (w ^ x ^ y) + block[i] + 0x6ed9eba1 + rol(v, 5);
+    w = rol(w, 30);
+}
+
+
+inline static void R3(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
+{
+    block[i] = blk(block, i);
+    z += (((w | x) & y) | (w & x)) + block[i] + 0x8f1bbcdc + rol(v, 5);
+    w = rol(w, 30);
+}
+
+
+inline static void R4(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
+{
+    block[i] = blk(block, i);
+    z += (w ^ x ^ y) + block[i] + 0xca62c1d6 + rol(v, 5);
+    w = rol(w, 30);
+}
+
+
+
 struct str_out
 {
    char hex[ 2 + output_bytes * 2 ];
@@ -63,7 +124,8 @@ struct context
     
 constexpr void context::add(const std::uint8_t* data, std::size_t size ) noexcept
 {
-    while (size > 0){
+    while (size > 0)
+    {
        size --;
        bytes[this->size++] = *data++;
        if (this->size == message_block ){
@@ -108,7 +170,7 @@ constexpr str_out hex(context const& ctx) noexcept
     return out;
 }
     
-constexpt byte_out bytes(context const& ctx) noexcept
+constexpr byte_out bytes(context const& ctx) noexcept
 {
     byte_out out = {};
     ctx.bytes(out.bytes);
