@@ -1,181 +1,216 @@
-#pragma once
-
-#include <cstdint>
+//https://tools.ietf.org/html/rfc3174
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <climits> 
+
+
+#include <cstdio>
 
 namespace sha1
 {
 
-enum : std::size_t
+struct output
 {
-    block_size   = 16 ,
-    total_blocks = 80 ,
-    output_bytes = 20 ,
-    
-    message_block = 64 , // 64 bytes = 512 bits
-};
-    
-struct values
-{
-    std::uint32_t a, b, c, d, e;
+	uint8_t bytes[20];
+	char hex[42];
 };
 
-constexpr values default_values() noexcept
-{
-    return { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 };
-}
-
-constexpr values  key_values() noexcept
-{
-    return {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6, 0};
-}
-
-template <std::size_t n>
-constexpr std::uint32_t rol(const std::uint32_t value)
-{
-    return (value << n) | (value >> (32 - n));
-}
-
-struct block_t
-{
-    std::uint32_t w[block_size];
-
-    template <std::size_t i>
-    constexpr std::uint32_t blk() const noexcept
-    {
-        return rol<1>(w[(i + 13) & 15] ^ w[(i + 8) & 15] ^ w[(i + 2) & 15] ^ w[i]);
-    }
-
-};
-
-/*
- * (R0+R1), R2, R3, R4 are the different operations used in SHA1
- */
-
-constexpr void F0(const std::uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
-{
-    z += ((w & (x ^ y)) ^ y) + block[i] + 0x5a827999 + rol(v, 5);
-    w = rol(w, 30);
-}
-
-
-inline static void R1(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
-{
-    block[i] = blk(block, i);
-    z += ((w & (x ^ y)) ^ y) + block[i] + 0x5a827999 + rol(v, 5);
-    w = rol(w, 30);
-}
-
-
-inline static void R2(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
-{
-    block[i] = blk(block, i);
-    z += (w ^ x ^ y) + block[i] + 0x6ed9eba1 + rol(v, 5);
-    w = rol(w, 30);
-}
-
-
-inline static void R3(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
-{
-    block[i] = blk(block, i);
-    z += (((w | x) & y) | (w & x)) + block[i] + 0x8f1bbcdc + rol(v, 5);
-    w = rol(w, 30);
-}
-
-
-inline static void R4(uint32_t block[BLOCK_INTS], const uint32_t v, uint32_t& w, const uint32_t x, const uint32_t y, uint32_t& z, const size_t i)
-{
-    block[i] = blk(block, i);
-    z += (w ^ x ^ y) + block[i] + 0xca62c1d6 + rol(v, 5);
-    w = rol(w, 30);
-}
-
-
-
-struct str_out
-{
-   char hex[ 2 + output_bytes * 2 ];
-};
-    
-struct byte_out
-{
-    std::uint8_t bytes[output_bytes];
-};
-    
 struct context
 {
-     std::uint32_t words[ 16 ];  
-     std::size_t size;
-     values parameters;
-     
-    constexpr context() noexcept
-        : bytes{}, size(0), parameters(default_values())
-    {}
-    
-    constexpr void add(const std::uint8_t* data, std::size_t size ) noexcept;
-    constexpr void finish(const std::uint8_t* data, std::size_t size) noexcept;
-    
-    constexpr std::size_t hex(char* out) const noexcept;
-    constexpr std::size_t bytes(std::uint8_t* out) const noexcept;
- private:
-     constexpr void process_bytes() noexcept;   
-};
-    
-constexpr void context::add(const std::uint8_t* data, std::size_t size ) noexcept
+	context();
+	
+	int update(const uint8_t* data, size_t size);
+	
+	output result();
+		
+private:
+	template <int n>
+	static std::uint32_t shift_rotate(std::uint32_t x)
+	{
+		return (x << n) | (x >> (32-n));
+	}
+	void process();
+	void finish();
+private:
+   std::uint8_t msg[64];
+   int msg_index;
+   std::uint32_t w[ 80 ];
+   std::uint32_t lo_bits, hi_bits;
+   
+   std::uint32_t h1, h2, h3, h4, h5;
+   
+};	
+
+context::context()
+   : msg{}
+   , msg_index{0}
+   , w{}
+   , lo_bits{0}
+   , hi_bits{0}
+   , h1{0x67452301}
+   , h2{0xEFCDAB89}
+   , h3{0x98BADCFE}
+   , h4{0x10325476}
+   , h5{0xC3D2E1F0}
 {
-    while (size > 0)
-    {
-       size --;
-       bytes[this->size++] = *data++;
-       if (this->size == message_block ){
-           process_bytes();
-           this->size = 0;
-       }
-    }
-}
-    
-constexpr void context::finish(const std::uint8_t* data, std::size_t size) noexcept
-{
-    add(data,size);
-    
-}
- 
-    
-constexpr std::size_t context::hex(char * out) const noexcept
-{
-    constexpr std::size_t sz = output_size;
-    for (std::size_t ix = 0; ix != sz; ++ix){
-        unsigned x = bytes[ix];
-        out[ix * 2] = "0123456789ABCDEF"[x >> 4];
-        out[ix * 2 + 1 ] = "0123456789ABCDEF"[x & 15];
-    }
-    out[ sz * 2 ] = '\0';
-    
-    return sz * 2;
-}
-constexpr std::size_t context::bytes(std::uint8_t* out) const noexcept
-{
-    constexpr std::size_t sz = output_size;
-    for (std::size_t ix = 0; ix != sz; ++ix){
-         *out++ = words[ix];
-    }
-    return sz;
-}
-    
-constexpr str_out hex(context const& ctx) noexcept
-{
-    str_out out = {};
-    ctx.hex(out.hex);
-    return out;
-}
-    
-constexpr byte_out bytes(context const& ctx) noexcept
-{
-    byte_out out = {};
-    ctx.bytes(out.bytes);
-    return out;
 }
 
+output context::result()
+{
+	output o = {};
+	finish();
 
-} // sha1 namespace
+	std::uint32_t h_array[] = {h1, h2, h3, h4, h5};
+	int shifts[ 4 ] = {24, 16, 8, 0};
+
+	for (int i = 0; i < 20; ++i)
+	{
+		std::uint8_t byte = (h_array[ i / 4 ] >> shifts[i%4]) & 0xff ;
+		o.bytes[ i ] = byte;
+		o.hex[i*2+0] = "0123456789abcdef" [byte >> 4];
+		o.hex[i*2+1] = "0123456789abcdef" [byte & 15];
+	}
+	
+	return o;
+}
+
+void context::process()
+{
+	std::uint32_t a = h1, b = h2, c = h3, d = h4, e = h5;
+	std::uint32_t temp;
+	
+	for (int i = 0; i < 16; ++i)
+	{
+		w[i]  = static_cast<std::uint32_t>(msg[i*4+0]) << 24;
+		w[i] |= static_cast<std::uint32_t>(msg[i*4+1]) << 16;
+		w[i] |= static_cast<std::uint32_t>(msg[i*4+2]) << 8;
+		w[i] |= static_cast<std::uint32_t>(msg[i*4+3]) << 0;
+		 
+	}
+	for (int i = 16; i < 80; ++i){
+		w[i] = shift_rotate<1>(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16]);
+	}
+	std::uint32_t keys [] = {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6};
+	
+	for (int t = 0; t < 20; ++t){
+		 temp = shift_rotate<5>( a ) + ( (b&c) | ( (~b) & d) ) + e + w[ t ] + keys[ 0 ];
+		  
+		 e = d; 
+		 d = c; 
+		 c = shift_rotate<30>( b ); 
+		 b = a; 
+		 a = temp;
+		
+	}
+	
+	for (int t = 20; t < 40; ++t){
+		 temp = shift_rotate<5>( a ) + ( b^c^d ) + e + w[ t ] + keys[ 1 ];
+		  
+		 e = d; 
+		 d = c; 
+		 c = shift_rotate<30>( b ); 
+		 b = a; 
+		 a = temp;
+		
+	}
+	
+	for (int t = 40; t < 60; ++t){
+		 temp = shift_rotate<5>( a ) + ( (b & c) | (b & d) | (c & d) ) + e + w[ t ] + keys[ 2 ];
+		  
+		 e = d; 
+		 d = c; 
+		 c = shift_rotate<30>( b ); 
+		 b = a; 
+		 a = temp;
+		
+	}
+	for (int t = 60; t < 80; ++t){
+		 temp = shift_rotate<5>( a ) + ( b^c^d ) + e + w[ t ] + keys[ 3 ];
+		  
+		 e = d; 
+		 d = c; 
+		 c = shift_rotate<30>( b ); 
+		 b = a; 
+		 a = temp;
+		
+	}
+		
+	
+	h1 += a;
+	h2 += b;
+	h3 += c;
+	h4 += d;
+	h5 += e;
+}
+
+int context::update(const uint8_t* data, size_t size)
+{
+	for (size_t i = 0; i < size; ++i)
+	{
+		lo_bits += 8;
+		if (lo_bits == 0){
+			hi_bits += 8;
+		}
+		msg[msg_index++] = data[i];
+		if (msg_index == 64){
+			process();
+			msg_index = 0;
+		}
+	}
+	return 0;
+}
+void context::finish()
+{
+	msg[msg_index++] = 0x80;
+
+	if (msg_index > 56)
+	{
+		while (msg_index < 64)
+			msg[msg_index++] = 0x00;
+	
+		process();
+	
+		msg_index = 0;
+	}
+
+	while (msg_index < 56)
+		msg[msg_index++] = 0;
+	
+	msg[56] = hi_bits >> 24;
+	msg[57] = hi_bits >> 16;
+	msg[58] = hi_bits >> 8;
+	msg[59] = hi_bits >> 0;
+	
+	msg[60] = lo_bits >> 24;
+	msg[61] = lo_bits >> 16;
+	msg[62] = lo_bits >> 8;
+	msg[63] = lo_bits >> 0;
+		
+	process();
+
+}
+
+template <typename Byte>
+output  result(const Byte* message, size_t size)
+{
+	static_assert(sizeof(Byte) == 1, "sizeof(Byte) == 1");
+	
+	context ctx;
+	
+	ctx.update((const uint8_t*)message, size);
+	
+	return ctx.result();
+}
+
+	
+} // namespace sha1
+
+int main()
+{
+	const char* msg = "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!";//"The quick brown fox jumps over the lazy dog";
+	
+	auto o = sha1::result(msg, strlen(msg));
+	
+	printf("%s\n", o.hex);
+}
