@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
    }
 
    sha1::context ctx;
-   constexpr std::size_t PAGE_SIZE = 8192;
+   constexpr std::size_t PAGE_SIZE = 8192 * 64;
    std::uint8_t * data = new std::uint8_t[PAGE_SIZE];
    while (true){
       std::size_t size = fread(data, 1, PAGE_SIZE, file);
@@ -24,6 +24,7 @@ int main(int argc, char* argv[])
       if (size < PAGE_SIZE)
          break;
    }
+   delete [] data;
    fclose(file);
 
    ctx.finish();
