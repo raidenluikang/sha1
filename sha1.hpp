@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstring>
 
+#include <cstdio> // debug purpose
+
 namespace sha1
 {
 
@@ -72,17 +74,17 @@ struct context
     constexpr std::size_t to_hex(char* out) const noexcept;
     constexpr std::size_t to_bytes(std::uint8_t* out) const noexcept;
  private:
-     constexpr void process_bytes() noexcept;   
+     constexpr void process_bytes(const std::uint8_t* bytes) noexcept;   
 };
 
-constexpr void context::process_bytes() noexcept
+constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
 {
     std::uint32_t a = parameters.a;
     std::uint32_t b = parameters.b;
     std::uint32_t c = parameters.c;
     std::uint32_t d = parameters.d;
     std::uint32_t e = parameters.e;
-    std::uint32_t tmp, f, key;
+    std::uint32_t tmp = 0;
 
     for (std::size_t i = 0; i < 16; ++i)
     {
@@ -100,22 +102,22 @@ constexpr void context::process_bytes() noexcept
 
     constexpr func_type funcs[4] = 
     {
-        [](std::uint32_t b, std::uint32_t c, std::uint32_t d)
+        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
         {
             return (b & c) | (~b & d); 
         },
         
-        [](std::uint32_t b, std::uint32_t c, std::uint32_t d)
+        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
         {
             return b^ c ^ d;
         },
         
-        [](std::uint32_t b, std::uint32_t c, std::uint32_t d)
+        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
         {
             return (b & c) | (b & d) | (c & d);
         },
     
-        [](std::uint32_t b, std::uint32_t c, std::uint32_t d)
+        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
         {
             return b^ c ^ d;
         }
@@ -148,22 +150,28 @@ constexpr void context::process_bytes() noexcept
 
 constexpr void context::update(const std::uint8_t* data, std::size_t size ) noexcept
 {
-    if (size + index_byte >= 64 ){
-        std::size_t diff = 64 - index_byte;
-        memcpy(bytes + index_byte, data, diff);
-        data += diff;
-        size -= diff;
-        process_bytes();
-
-        index_byte = 0;
-        while (size >= 64){
-            memcpy(bytes, data, 64);
-            process_bytes();
-            data += 64;
-            size -= 64;
+    total_bits += static_cast<std::uint64_t>(size) * 8;
+    
+    if (size + index_byte >= 64 )
+    {
+        if (index_byte > 0){
+            const std::size_t diff = 64 - index_byte;
+            memcpy(bytes + index_byte, data, diff);
+            data += diff;
+            size -= diff;
+            process_bytes(bytes);
         }
+
+        const std::size_t number = (size / 64) * 64;
+        
+        for (std::size_t index = 0; index < number; index += 64)
+            process_bytes(data + index );
+        
+        data += number;
+        size -= number;
+
         index_byte = size;
-        if (size)
+        if (size > 0)
         {
             memcpy(bytes, data, size);
         }
@@ -171,7 +179,8 @@ constexpr void context::update(const std::uint8_t* data, std::size_t size ) noex
         memcpy(bytes + index_byte, data, size);
         index_byte += size;
     }
-   
+
+    
 }
     
 constexpr void context::finish() noexcept
@@ -180,7 +189,7 @@ constexpr void context::finish() noexcept
             bytes[index_byte++] = 0x80;
             while (index_byte < 64)
                 bytes[index_byte++] = 0x00;
-            process_bytes();
+            process_bytes(bytes);
 
             memset(bytes, 0, sizeof(bytes));
             bytes[56] = total_bits >> 56;
@@ -192,11 +201,11 @@ constexpr void context::finish() noexcept
             bytes[62] = total_bits >> 8;
             bytes[63] = total_bits >> 0;
 
-            process_bytes();
+            process_bytes(bytes);
         }  else {
             bytes[index_byte++] = 0x80;
             while (index_byte < 56 )
-                bytes[index_byte] = 0x00;
+                bytes[index_byte++] = 0x00;
 
             bytes[56] = total_bits >> 56;
             bytes[57] = total_bits >> 48;
@@ -207,7 +216,7 @@ constexpr void context::finish() noexcept
             bytes[62] = total_bits >> 8;
             bytes[63] = total_bits >> 0;
 
-            process_bytes();
+            process_bytes(bytes);
 
         }
 }
@@ -216,12 +225,18 @@ constexpr void context::finish() noexcept
 constexpr std::size_t context::to_hex(char * out) const noexcept
 {
     constexpr std::size_t sz = 20;
-    to_bytes((std::uint8_t*)out + sz);
-    for (std::size_t ix = 0; ix != sz; ++ix){
-        unsigned x = out[ix + sz];
-        out[ix * 2] = "0123456789ABCDEF"[x >> 4];
-        out[ix * 2 + 1 ] = "0123456789ABCDEF"[x & 15];
+    
+    std::uint8_t bx[sz] = {};
+    
+    to_bytes(bx);
+
+    for (std::size_t ix = 0; ix != sz; ++ix)
+    {
+        unsigned x = bx[ix];
+        out[ix * 2] = "0123456789abcdef"[x >> 4];
+        out[ix * 2 + 1 ] = "0123456789abcdef"[x & 15];
     }
+    
     out[ sz * 2 ] = '\0';
     
     return sz * 2;
