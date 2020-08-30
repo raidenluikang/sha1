@@ -4,8 +4,6 @@
 #include <cstddef>
 #include <cstring>
 
-#include <cstdio> // debug purpose
-
 namespace sha1
 {
 
@@ -15,7 +13,7 @@ struct values
 };
 
 template <std::size_t n>
-constexpr std::uint32_t rol(const std::uint32_t value)
+constexpr std::uint32_t rol(const std::uint32_t value) noexcept
 {
     return (value << n) | (value >> (32 - n));
 }
@@ -45,14 +43,12 @@ constexpr bool operator == (const byte_out& lhs, const byte_out& rhs) noexcept
 struct context
 {
      std::uint32_t words[ 16 ];  
-     std::uint8_t bytes[ 64 ];
      std::uint64_t total_bits;
      std::uint32_t index_byte;
      values parameters;
      bool little_endian;     
     constexpr context() noexcept
         : words{}
-        , bytes{}
         , total_bits{0}
         , index_byte{0}
         , parameters { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 }
@@ -68,17 +64,17 @@ struct context
     constexpr std::size_t to_hex(char* out) const noexcept;
     constexpr std::size_t to_bytes(std::uint8_t* out) const noexcept;
  private:
-     constexpr void process_bytes(const std::uint8_t* bytes) noexcept;   
+     constexpr void process_bytes() noexcept;   
 };
 
 // some compilers(G++, Clang++, ) generated a single bswap instruction.
-constexpr std::uint32_t swap_uint32( std::uint32_t val )
+constexpr std::uint32_t swap_uint32( std::uint32_t val ) noexcept
 {
     val = ((val << 8) & 0xFF00FF00 ) | ((val >> 8) & 0xFF00FF ); 
     return (val << 16) | (val >> 16);
 }
 
-constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
+constexpr void context::process_bytes() noexcept
 {
  
     std::uint32_t a = parameters.a;
@@ -87,7 +83,6 @@ constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
     std::uint32_t d = parameters.d;
     std::uint32_t e = parameters.e;
 
-    memcpy(words, bytes, 64);
     if ( little_endian )
     {
         words[0] = swap_uint32(words[0]); words[1] = swap_uint32(words[1]);
@@ -228,7 +223,8 @@ constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
 constexpr void context::update(const std::uint8_t* data, std::size_t size ) noexcept
 {
     total_bits += static_cast<std::uint64_t>(size) * 8;
-    
+    std::uint8_t* bytes = (std::uint8_t*)words;
+            
     if (size + index_byte >= 64 )
     {
         if (index_byte > 0){
@@ -236,13 +232,15 @@ constexpr void context::update(const std::uint8_t* data, std::size_t size ) noex
             memcpy(bytes + index_byte, data, diff);
             data += diff;
             size -= diff;
-            process_bytes(bytes);
+            process_bytes();
         }
 
         const std::size_t number = (size / 64) * 64;
         
-        for (std::size_t index = 0; index < number; index += 64)
-            process_bytes(data + index );
+        for (std::size_t index = 0; index < number; index += 64){
+            memcpy(bytes, data + index, 64);
+            process_bytes();
+        }
         
         data += number;
         size -= number;
@@ -255,47 +253,45 @@ constexpr void context::update(const std::uint8_t* data, std::size_t size ) noex
     } else if (size > 0){
         memcpy(bytes + index_byte, data, size);
         index_byte += size;
-    }
-
-    
+    }   
 }
     
 constexpr void context::finish() noexcept
 { 
-        if (index_byte >= 56){
-            bytes[index_byte++] = 0x80;
-            while (index_byte < 64)
-                bytes[index_byte++] = 0x00;
-            process_bytes(bytes);
+    std::uint8_t* bytes = (std::uint8_t*)words;
+    if (index_byte >= 56){
+        bytes[index_byte++] = 0x80;
+        while (index_byte < 64)
+            bytes[index_byte++] = 0x00;
+        process_bytes();
 
-            memset(bytes, 0, sizeof(bytes));
-            bytes[56] = total_bits >> 56;
-            bytes[57] = total_bits >> 48;
-            bytes[58] = total_bits >> 40;
-            bytes[59] = total_bits >> 32;
-            bytes[60] = total_bits >> 24;
-            bytes[61] = total_bits >> 16;
-            bytes[62] = total_bits >> 8;
-            bytes[63] = total_bits >> 0;
+        memset(bytes, 0, 64);
+        bytes[56] = total_bits >> 56;
+        bytes[57] = total_bits >> 48;
+        bytes[58] = total_bits >> 40;
+        bytes[59] = total_bits >> 32;
+        bytes[60] = total_bits >> 24;
+        bytes[61] = total_bits >> 16;
+        bytes[62] = total_bits >> 8;
+        bytes[63] = total_bits >> 0;
 
-            process_bytes(bytes);
-        }  else {
-            bytes[index_byte++] = 0x80;
-            while (index_byte < 56 )
-                bytes[index_byte++] = 0x00;
+        process_bytes();
+    }  else {
+        bytes[index_byte++] = 0x80;
+        while (index_byte < 56 )
+            bytes[index_byte++] = 0x00;
 
-            bytes[56] = total_bits >> 56;
-            bytes[57] = total_bits >> 48;
-            bytes[58] = total_bits >> 40;
-            bytes[59] = total_bits >> 32;
-            bytes[60] = total_bits >> 24;
-            bytes[61] = total_bits >> 16;
-            bytes[62] = total_bits >> 8;
-            bytes[63] = total_bits >> 0;
+        bytes[56] = total_bits >> 56;
+        bytes[57] = total_bits >> 48;
+        bytes[58] = total_bits >> 40;
+        bytes[59] = total_bits >> 32;
+        bytes[60] = total_bits >> 24;
+        bytes[61] = total_bits >> 16;
+        bytes[62] = total_bits >> 8;
+        bytes[63] = total_bits >> 0;
 
-            process_bytes(bytes);
-
-        }
+        process_bytes();
+    }
 }
  
     
