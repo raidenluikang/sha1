@@ -205,7 +205,7 @@ constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
  #undef fz
  #undef R0
  #undef R1
- 
+
     parameters.a += a;
     parameters.b += b;
     parameters.c += c;
@@ -351,7 +351,3 @@ constexpr str_out digest_hex(const char* data, std::size_t len)
 }
 
 } // sha1 namespace
-
-
-// test
-

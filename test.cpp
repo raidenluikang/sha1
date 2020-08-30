@@ -53,8 +53,8 @@ int main(int argc, char* argv[])
 
    auto h = sha1::to_hex(ctx);
    printf("digest of `%s` file: %s\n", argv[1], h.hex);
-   std::size_t bytes = ctx.total_bits / 8;
-   double measure = bytes / cpuTimer.elapsed();
-   printf("measure speed %.7f  byte/second\n", measure);
+   std::size_t bytes = ctx.total_bits / 8 ;
+   double measure = bytes / cpuTimer.elapsed() / 1048576.0;
+   printf("measure speed %.7f  Mbyte/second\n", measure);
    return 0;
 }
