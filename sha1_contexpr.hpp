@@ -49,14 +49,18 @@ struct context
      std::uint64_t total_bits;
      std::uint32_t index_byte;
      values parameters;
-     
+     bool little_endian;     
     constexpr context() noexcept
         : words{}
         , bytes{}
         , total_bits{0}
         , index_byte{0}
         , parameters { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 }
-    {}
+        , little_endian{false}
+    {
+        std::uint32_t x = 1;
+        little_endian = ( ((std::uint8_t*)&x)[0] ==1);
+    }
     
     constexpr void update(const std::uint8_t* data, std::size_t size ) noexcept;
     constexpr void finish() noexcept;
@@ -84,9 +88,16 @@ constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
     std::uint32_t e = parameters.e;
 
     memcpy(words, bytes, 64);
-    for (std::size_t i = 0; i < 16; ++i)
+    if ( little_endian )
     {
-        words[i] = swap_uint32(words[i]);
+        words[0] = swap_uint32(words[0]); words[1] = swap_uint32(words[1]);
+        words[2] = swap_uint32(words[2]); words[3] = swap_uint32(words[3]);
+        words[4] = swap_uint32(words[4]); words[5] = swap_uint32(words[5]);
+        words[6] = swap_uint32(words[6]); words[7] = swap_uint32(words[7]);
+        words[8] = swap_uint32(words[8]); words[9] = swap_uint32(words[9]);
+        words[10] = swap_uint32(words[10]); words[11] = swap_uint32(words[11]);
+        words[12] = swap_uint32(words[12]); words[13] = swap_uint32(words[13]);
+        words[14] = swap_uint32(words[14]); words[15] = swap_uint32(words[15]);
     }
 
 #define fx(b,c,d)  ((b & c) | ((~b) & d))
