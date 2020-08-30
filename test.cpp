@@ -2,14 +2,22 @@
 
 #include <cstdio>
 #include <chrono>
+#include <memory>
+
 struct AutoCpuTimer
 {
-   std::chrono::high_resolution_clock::time_point start, finish;
-   AutoCpuTimer(): start(std::chrono::high_resolution_clock::now()), finish(){}
-   ~AutoCpuTimer(){
-      finish = std::chrono::high_resolution_clock::now();
+   std::chrono::high_resolution_clock::time_point start;
+   AutoCpuTimer(): start(std::chrono::high_resolution_clock::now()){}
+   
+   double elapsed() const
+   {
+      auto finish = std::chrono::high_resolution_clock::now();
       double elapsed = std::chrono::duration<double>(finish - start).count();
-      printf("elapsed: %.7f seconds.\n", elapsed);
+      return elapsed;
+   }
+
+   ~AutoCpuTimer(){
+      printf("elapsed: %.7f seconds.\n", elapsed());
    }
 };
 
@@ -28,20 +36,25 @@ int main(int argc, char* argv[])
 
    sha1::context ctx;
    constexpr std::size_t PAGE_SIZE = 8192 * 64;
-   std::uint8_t * data = new std::uint8_t[PAGE_SIZE];
+   
+   std::unique_ptr<std::uint8_t[]> data( new std::uint8_t[PAGE_SIZE] );
+   std::uint8_t * data_ptr = data.get();
+
    while (true){
-      std::size_t size = fread(data, 1, PAGE_SIZE, file);
-      ctx.update(data, size);
+      std::size_t size = fread(data_ptr, 1, PAGE_SIZE, file);
+      ctx.update(data_ptr, size);
       if (size < PAGE_SIZE)
          break;
    }
-   delete [] data;
+    
    fclose(file);
 
    ctx.finish();
 
    auto h = sha1::to_hex(ctx);
    printf("digest of `%s` file: %s\n", argv[1], h.hex);
-
+   std::size_t bytes = ctx.total_bits / 8;
+   double measure = bytes / cpuTimer.elapsed();
+   printf("measure speed %.7f  byte/second\n", measure);
    return 0;
 }

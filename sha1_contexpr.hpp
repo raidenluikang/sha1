@@ -200,6 +200,11 @@ constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
     R1( c, d, e, a, b, 14, fy, 0xCA62C1D6 )
     R1( b, c, d, e, a, 15, fy, 0xCA62C1D6 )
      
+ #undef fx
+ #undef fy
+ #undef fz
+ #undef R0
+ #undef R1
  
     parameters.a += a;
     parameters.b += b;
