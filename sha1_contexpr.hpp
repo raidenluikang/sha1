@@ -14,16 +14,6 @@ struct values
     std::uint32_t a, b, c, d, e;
 };
 
-constexpr values default_values() noexcept
-{
-    return { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 };
-}
-
-constexpr values  key_values() noexcept
-{
-    return {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6, 0};
-}
-
 template <std::size_t n>
 constexpr std::uint32_t rol(const std::uint32_t value)
 {
@@ -65,7 +55,7 @@ struct context
         , bytes{}
         , total_bits{0}
         , index_byte{0}
-        , parameters(default_values())
+        , parameters { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 }
     {}
     
     constexpr void update(const std::uint8_t* data, std::size_t size ) noexcept;
@@ -77,69 +67,140 @@ struct context
      constexpr void process_bytes(const std::uint8_t* bytes) noexcept;   
 };
 
+// some compilers(G++, Clang++, ) generated a single bswap instruction.
+constexpr std::uint32_t swap_uint32( std::uint32_t val )
+{
+    val = ((val << 8) & 0xFF00FF00 ) | ((val >> 8) & 0xFF00FF ); 
+    return (val << 16) | (val >> 16);
+}
+
 constexpr void context::process_bytes(const std::uint8_t* bytes) noexcept
 {
+ 
     std::uint32_t a = parameters.a;
     std::uint32_t b = parameters.b;
     std::uint32_t c = parameters.c;
     std::uint32_t d = parameters.d;
     std::uint32_t e = parameters.e;
-    std::uint32_t tmp = 0;
 
+    memcpy(words, bytes, 64);
     for (std::size_t i = 0; i < 16; ++i)
     {
-        words[i] = static_cast<std::uint32_t>(bytes[i*4 + 0]) << 24 | 
-                   static_cast<std::uint32_t>(bytes[i*4 + 1]) << 16 | 
-                   static_cast<std::uint32_t>(bytes[i*4 + 2]) << 8  | 
-                   static_cast<std::uint32_t>(bytes[i*4 + 3]);
+        words[i] = swap_uint32(words[i]);
     }
 
-    using func_type = std::uint32_t(*)(std::uint32_t, std::uint32_t, std::uint32_t);
+#define fx(b,c,d)  ((b & c) | ((~b) & d))
+#define fy(b,c,d)  (b ^ c ^ d)
+#define fz(b,c,d)  ((b & c) |(b & d) | (c & d))
 
-    constexpr values keys_tmp = key_values();
+#define R_UPD(s) words[s] = rol<1>(words[(s + 13 ) & 15 ] ^ words[ (s + 8) & 15] ^ words[( s + 2) & 15] ^ words[s]);
+#define R0(a,b,c,d,e, s, func, key) e = rol<5>(a) + func(b,c,d) + e + words[s] + key; b = rol<30>(b);
+#define R1(a,b,c,d,e, s, func, key)  R_UPD(s) R0(a,b,c,d,e,s,func,key)
     
-    constexpr std::uint32_t keys[4] = {keys_tmp.a, keys_tmp.b, keys_tmp.c, keys_tmp.d};
+    R0( a, b, c, d, e, 0, fx, 0x5A827999 )
+    R0( e, a, b, c, d, 1, fx, 0x5A827999 )
+    R0( d, e, a, b, c, 2, fx, 0x5A827999 )
+    R0( c, d, e, a, b, 3, fx, 0x5A827999 )
+    R0( b, c, d, e, a, 4, fx, 0x5A827999 )
 
-    constexpr func_type funcs[4] = 
-    {
-        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
-        {
-            return (b & c) | (~b & d); 
-        },
-        
-        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
-        {
-            return b^ c ^ d;
-        },
-        
-        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
-        {
-            return (b & c) | (b & d) | (c & d);
-        },
+    R0( a, b, c, d, e, 5, fx, 0x5A827999 )
+    R0( e, a, b, c, d, 6, fx, 0x5A827999 )
+    R0( d, e, a, b, c, 7, fx, 0x5A827999 )
+    R0( c, d, e, a, b, 8, fx, 0x5A827999 )
+    R0( b, c, d, e, a, 9, fx, 0x5A827999 )
     
-        +[](std::uint32_t b, std::uint32_t c, std::uint32_t d)
-        {
-            return b^ c ^ d;
-        }
-    };
+    R0( a, b, c, d, e, 10, fx, 0x5A827999 )
+    R0( e, a, b, c, d, 11, fx, 0x5A827999 )
+    R0( d, e, a, b, c, 12, fx, 0x5A827999 )
+    R0( c, d, e, a, b, 13, fx, 0x5A827999 )
+    R0( b, c, d, e, a, 14, fx, 0x5A827999 )
     
-    for (int t = 0; t < 80; ++t)
-    {
-        int s = t & 0x0f;
-        if (t >= 16){
-            words[s] = rol<1>(words[(s + 13 ) & 15 ] ^ words[ (s + 8) & 15] ^ words[( s + 2) & 15] ^ words[s]); 
-        }
 
-        tmp = rol<5>(a) + (funcs[t/20])(b,c,d) + e + words[s] + keys[t/20];
+    R0( a, b, c, d, e, 15, fx, 0x5A827999 )
+    R1( e, a, b, c, d, 0, fx, 0x5A827999 )
+    R1( d, e, a, b, c, 1, fx, 0x5A827999 )
+    R1( c, d, e, a, b, 2, fx, 0x5A827999 )
+    R1( b, c, d, e, a, 3, fx, 0x5A827999 )
+    
+    /// t >= 20 .. 39
+    R1( a, b, c, d, e, 4, fy, 0x6ED9EBA1 )
+    R1( e, a, b, c, d, 5, fy, 0x6ED9EBA1 )
+    R1( d, e, a, b, c, 6, fy, 0x6ED9EBA1 )
+    R1( c, d, e, a, b, 7, fy, 0x6ED9EBA1 )
+    R1( b, c, d, e, a, 8, fy, 0x6ED9EBA1 )
 
+    R1( a, b, c, d, e, 9, fy, 0x6ED9EBA1 )
+    R1( e, a, b, c, d, 10, fy, 0x6ED9EBA1 )
+    R1( d, e, a, b, c, 11, fy, 0x6ED9EBA1 )
+    R1( c, d, e, a, b, 12, fy, 0x6ED9EBA1 )
+    R1( b, c, d, e, a, 13, fy, 0x6ED9EBA1 )
+    
+    R1( a, b, c, d, e, 14, fy, 0x6ED9EBA1 )
+    R1( e, a, b, c, d, 15, fy, 0x6ED9EBA1 )
+    R1( d, e, a, b, c, 0, fy, 0x6ED9EBA1 )
+    R1( c, d, e, a, b, 1, fy, 0x6ED9EBA1 )
+    R1( b, c, d, e, a, 2, fy, 0x6ED9EBA1 )
+    
 
-        e = d;
-        d = c;
-        c = rol<30>(b);
-        b = a;
-        a = tmp;
-    }
+    R1( a, b, c, d, e, 3, fy, 0x6ED9EBA1 )
+    R1( e, a, b, c, d, 4, fy, 0x6ED9EBA1 )
+    R1( d, e, a, b, c, 5, fy, 0x6ED9EBA1 )
+    R1( c, d, e, a, b, 6, fy, 0x6ED9EBA1 )
+    R1( b, c, d, e, a, 7, fy, 0x6ED9EBA1 )
 
+    // t >= 40 .. 59
+    R1( a, b, c, d, e, 8, fz, 0x8F1BBCDC )
+    R1( e, a, b, c, d, 9, fz, 0x8F1BBCDC )
+    R1( d, e, a, b, c, 10, fz, 0x8F1BBCDC )
+    R1( c, d, e, a, b, 11, fz, 0x8F1BBCDC )
+    R1( b, c, d, e, a, 12, fz, 0x8F1BBCDC )
+
+    R1( a, b, c, d, e, 13, fz, 0x8F1BBCDC )
+    R1( e, a, b, c, d, 14, fz, 0x8F1BBCDC )
+    R1( d, e, a, b, c, 15, fz, 0x8F1BBCDC )
+    R1( c, d, e, a, b, 0, fz, 0x8F1BBCDC )
+    R1( b, c, d, e, a, 1, fz, 0x8F1BBCDC )
+    
+    R1( a, b, c, d, e, 2, fz, 0x8F1BBCDC )
+    R1( e, a, b, c, d, 3, fz, 0x8F1BBCDC )
+    R1( d, e, a, b, c, 4, fz, 0x8F1BBCDC )
+    R1( c, d, e, a, b, 5, fz, 0x8F1BBCDC )
+    R1( b, c, d, e, a, 6, fz, 0x8F1BBCDC )
+    
+
+    R1( a, b, c, d, e, 7, fz, 0x8F1BBCDC )
+    R1( e, a, b, c, d, 8, fz, 0x8F1BBCDC )
+    R1( d, e, a, b, c, 9, fz, 0x8F1BBCDC )
+    R1( c, d, e, a, b, 10, fz, 0x8F1BBCDC )
+    R1( b, c, d, e, a, 11, fz, 0x8F1BBCDC )
+
+    // t >= 60 .. 79
+    R1( a, b, c, d, e, 12, fy, 0xCA62C1D6 )
+    R1( e, a, b, c, d, 13, fy, 0xCA62C1D6 )
+    R1( d, e, a, b, c, 14, fy, 0xCA62C1D6 )
+    R1( c, d, e, a, b, 15, fy, 0xCA62C1D6 )
+    R1( b, c, d, e, a, 0, fy, 0xCA62C1D6 )
+
+    R1( a, b, c, d, e, 1, fy, 0xCA62C1D6 )
+    R1( e, a, b, c, d, 2, fy, 0xCA62C1D6 )
+    R1( d, e, a, b, c, 3, fy, 0xCA62C1D6 )
+    R1( c, d, e, a, b, 4, fy, 0xCA62C1D6 )
+    R1( b, c, d, e, a, 5, fy, 0xCA62C1D6 )
+    
+    R1( a, b, c, d, e, 6, fy, 0xCA62C1D6 )
+    R1( e, a, b, c, d, 7, fy, 0xCA62C1D6 )
+    R1( d, e, a, b, c, 8, fy, 0xCA62C1D6 )
+    R1( c, d, e, a, b, 9, fy, 0xCA62C1D6 )
+    R1( b, c, d, e, a, 10, fy, 0xCA62C1D6 )
+    
+
+    R1( a, b, c, d, e, 11, fy, 0xCA62C1D6 )
+    R1( e, a, b, c, d, 12, fy, 0xCA62C1D6 )
+    R1( d, e, a, b, c, 13, fy, 0xCA62C1D6 )
+    R1( c, d, e, a, b, 14, fy, 0xCA62C1D6 )
+    R1( b, c, d, e, a, 15, fy, 0xCA62C1D6 )
+     
+ 
     parameters.a += a;
     parameters.b += b;
     parameters.c += c;
